@@ -550,6 +550,20 @@ namespace NanoXLSX.LowLevel
             }
         }
 
+        public MemoryStream SaveGasStream()
+        {
+            try
+            {
+                var fs = new MemoryStream();
+                return SaveAsGasStream(fs);
+
+            }
+            catch (Exception e)
+            {
+                throw new IOException("An error occurred while saving. See inner exception for details: " + e.Message, e);
+            }
+        }
+
         /// <summary>
         /// Method to save the workbook asynchronous.
         /// </summary>
@@ -657,6 +671,107 @@ namespace NanoXLSX.LowLevel
                     {
                         stream.Close();
                     }
+                }
+            }
+            catch (Exception e)
+            {
+                throw new IOException("An error occurred while saving. See inner exception for details: " + e.Message, e);
+            }
+        }
+
+        private MemoryStream SaveAsGasStream(Stream stream, bool leaveOpen = false)
+        {
+            workbook.ResolveMergedCells();
+            this.styles = StyleManager.GetManagedStyles(workbook);
+            var sheetUris = new List<Uri>();
+
+            try
+            {
+                using (var p = Package.Open(stream, FileMode.Create))
+                {
+                    var workbookUri = new Uri(WORKBOOK.GetFullPath(), UriKind.Relative);
+                    var stylesheetUri = new Uri(STYLES.GetFullPath(), UriKind.Relative);
+                    var appPropertiesUri = new Uri(APP_PROPERTIES.GetFullPath(), UriKind.Relative);
+                    var corePropertiesUri = new Uri(CORE_PROPERTIES.GetFullPath(), UriKind.Relative);
+                    var sharedStringsUri = new Uri(SHARED_STRINGS.GetFullPath(), UriKind.Relative);
+
+                    var pp = p.CreatePart(workbookUri, @"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml", CompressionOption.Normal);
+                    p.CreateRelationship(pp.Uri, TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", "rId1");
+                    p.CreateRelationship(corePropertiesUri, TargetMode.Internal, @"http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties", "rId2"); //!
+                    p.CreateRelationship(appPropertiesUri, TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties", "rId3"); //!
+
+                    AppendXmlToPackagePart(CreateWorkbookDocument(), pp);
+                    int idCounter;
+                    if (workbook.Worksheets.Count > 0)
+                    {
+                        idCounter = workbook.Worksheets.Count + 1;
+                    }
+                    else
+                    {
+                        //  Fallback on empty workbook
+                        idCounter = 2;
+                    }
+                    pp.CreateRelationship(stylesheetUri, TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", "rId" + idCounter);
+                    pp.CreateRelationship(sharedStringsUri, TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings", "rId" + (idCounter + 1));
+
+                    DocumentPath sheetPath;
+                    if (workbook.Worksheets.Count > 0)
+                    {
+                        foreach (var item in workbook.Worksheets)
+                        {
+                            sheetPath = new DocumentPath("sheet" + item.SheetID + ".xml", "xl/worksheets");
+                            sheetUris.Add(new Uri(sheetPath.GetFullPath(), UriKind.Relative));
+                            pp.CreateRelationship(sheetUris[sheetUris.Count - 1], TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", "rId" + item.SheetID);
+                        }
+                    }
+                    else
+                    {
+                        //  Fallback on empty workbook
+                        sheetPath = new DocumentPath("sheet1.xml", "xl/worksheets");
+                        sheetUris.Add(new Uri(sheetPath.GetFullPath(), UriKind.Relative));
+                        pp.CreateRelationship(sheetUris[sheetUris.Count - 1], TargetMode.Internal, @"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", "rId1");
+                    }
+
+                    pp = p.CreatePart(stylesheetUri, @"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml", CompressionOption.Normal);
+                    AppendXmlToPackagePart(CreateStyleSheetDocument(), pp);
+
+                    var i = 0;
+
+                    if (workbook.Worksheets.Count > 0)
+                    {
+                        foreach (var item in workbook.Worksheets)
+                        {
+                            pp = p.CreatePart(sheetUris[i], @"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", CompressionOption.Normal);
+                            i++;
+                            AppendXmlToPackagePart(CreateWorksheetPart(item), pp);
+                        }
+                    }
+                    else
+                    {
+                        pp = p.CreatePart(sheetUris[i], @"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml", CompressionOption.Normal);
+                        i++;
+                        AppendXmlToPackagePart(CreateWorksheetPart(new Worksheet("sheet1")), pp);
+                    }
+
+                    pp = p.CreatePart(sharedStringsUri, @"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml", CompressionOption.Normal);
+                    AppendXmlToPackagePart(CreateSharedStringsDocument(), pp);
+
+                    if (workbook.WorkbookMetadata != null)
+                    {
+                        pp = p.CreatePart(appPropertiesUri, @"application/vnd.openxmlformats-officedocument.extended-properties+xml", CompressionOption.Normal);
+                        AppendXmlToPackagePart(CreateAppPropertiesDocument(), pp);
+                        pp = p.CreatePart(corePropertiesUri, @"application/vnd.openxmlformats-package.core-properties+xml", CompressionOption.Normal);
+                        AppendXmlToPackagePart(CreateCorePropertiesDocument(), pp);
+                    }
+
+                    p.Flush();
+                    p.Close();
+
+                    // if (!leaveOpen)
+                    // {
+                    //     stream.Close();
+                    // }
+                    return (MemoryStream)stream;
                 }
             }
             catch (Exception e)
