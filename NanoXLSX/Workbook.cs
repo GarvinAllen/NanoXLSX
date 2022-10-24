@@ -492,9 +492,23 @@ namespace NanoXLSX
         public byte[] ToByteArray()
         {
             var l = new XlsxWriter(this);
-            var gasStream = l.SaveGasStream();
-            var byteArray = gasStream.ToArray();
+            byte[] byteArray;
+            using (var gasStream = (MemoryStream)l.SaveGasStream())
+            {
+                byteArray = gasStream.ToArray();
+            }
+
             return byteArray;
+        }
+
+        /// <summary>
+        /// Returns the stream to use in MVC controllers that need to save the Excel document to disk (the users default download folder)
+        /// </summary>
+        /// <returns>The Excel document as a stream</returns>
+        public Stream ToStream()
+        {
+            var l = new XlsxWriter(this);
+            return l.SaveGasStream();
         }
 
         /// <summary>

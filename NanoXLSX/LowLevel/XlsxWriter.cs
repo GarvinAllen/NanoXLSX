@@ -550,13 +550,12 @@ namespace NanoXLSX.LowLevel
             }
         }
 
-        public MemoryStream SaveGasStream()
+        public Stream SaveGasStream()
         {
             try
             {
                 var fs = new MemoryStream();
                 return SaveAsGasStream(fs);
-
             }
             catch (Exception e)
             {
@@ -679,7 +678,7 @@ namespace NanoXLSX.LowLevel
             }
         }
 
-        private MemoryStream SaveAsGasStream(Stream stream, bool leaveOpen = false)
+        private Stream SaveAsGasStream(Stream stream, bool leaveOpen = false)
         {
             workbook.ResolveMergedCells();
             this.styles = StyleManager.GetManagedStyles(workbook);
@@ -771,7 +770,8 @@ namespace NanoXLSX.LowLevel
                     // {
                     //     stream.Close();
                     // }
-                    return (MemoryStream)stream;
+                    //return (MemoryStream)stream;
+                    return stream;
                 }
             }
             catch (Exception e)
